@@ -114,9 +114,9 @@ def _set_active_profile(identifier, name):
     st.session_state['_workspace_notice'] = '当前名单：' + name
 
 
-def _switch_profile():
+def _switch_profile(identifier=None):
     try:
-        chosen = st.session_state.get('_workspace_choice', 'default')
+        chosen = identifier or st.session_state.get('_workspace_choice', 'default')
         profiles = {item['id']: item['name'] for item in cloud_store().profiles()}
         if chosen not in profiles:
             raise CloudError('名单不存在，请刷新重试。')
@@ -134,16 +134,32 @@ def _create_profile():
         st.session_state['_workspace_error'] = str(exc)
 
 
+def _request_profile_delete(identifier):
+    require_session()
+    st.session_state['_workspace_delete_target'] = identifier
+    st.session_state.pop('_workspace_delete_name', None)
+
+
+def _cancel_profile_delete():
+    st.session_state.pop('_workspace_delete_target', None)
+    st.session_state.pop('_workspace_delete_name', None)
+
+
 def _delete_profile():
     try:
         store = cloud_store()
         profiles = {p['id']: p['name'] for p in store.profiles()}
-        current = store.profile_id
+        current = st.session_state.get('_workspace_delete_target')
+        if current not in profiles:
+            raise CloudError('目标工作台不存在，请重新选择。')
         if st.session_state.get('_workspace_delete_name', '').strip() != profiles.get(current):
             raise CloudError('请输入当前工作台的完整名称确认删除。')
         store.set_profile_deleted(current, True)
-        _set_active_profile('default', '默认名单（原有数据）')
-        st.session_state['_workspace_notice'] = '已移入回收区，数据保留，可在“新建”中恢复。'
+        if store.profile_id == current:
+            _set_active_profile('default', '默认名单（原有数据）')
+        else:
+            _cancel_profile_delete()
+        st.session_state['_workspace_notice'] = '已移入回收区，数据保留，可在“＋”中恢复。'
     except CloudError as exc:
         st.session_state['_workspace_error'] = str(exc)
 
@@ -177,18 +193,41 @@ def render_profile_controls():
     if st.session_state.get('_workspace_choice') not in profiles:
         st.session_state['_workspace_choice'] = current
     st.html('''<style>
-.st-key-profile_toolbar {max-width:260px!important;width:100%!important;}
+.st-key-profile_toolbar {max-width:304px!important;width:100%!important;}
 .st-key-profile_toolbar [data-testid="stHorizontalBlock"] {gap:6px!important;flex-wrap:nowrap!important;}
-.st-key-profile_toolbar [data-testid="stColumn"] {min-width:0!important;flex:1 1 0!important;}
+.st-key-profile_toolbar [data-testid="stColumn"] {min-width:0!important;}
+.st-key-profile_toolbar [data-testid="stColumn"]:first-child {flex:1 1 260px!important;}
+.st-key-profile_toolbar [data-testid="stColumn"]:last-child {flex:0 0 38px!important;}
 .st-key-profile_toolbar button {min-height:32px!important;padding:3px 7px!important;}
 .st-key-profile_toolbar button p {font-size:12px!important;white-space:nowrap;}
+.st-key-profile_add [data-testid="stPopoverButton"] svg {display:none;}
+.st-key-profile_menu [data-testid="stHorizontalBlock"] {flex-wrap:nowrap!important;gap:6px!important;}
+.st-key-profile_menu [data-testid="stColumn"] {min-width:0!important;}
+.st-key-profile_menu [data-testid="stColumn"]:first-child {flex:1 1 0!important;}
+.st-key-profile_menu [data-testid="stColumn"]:last-child {flex:0 0 34px!important;}
 </style>''')
     with st.container(key='profile_toolbar'):
-        st.selectbox('选择名单', options=list(profiles), format_func=lambda key: profiles[key],
-            key='_workspace_choice', label_visibility='collapsed')
-        switch, create, delete = st.columns(3, gap='small')
-        switch.button('切换', on_click=_switch_profile, width='stretch')
-        with create.popover('新建', width='stretch'):
+        selector, create = st.columns([7, 1], gap='small')
+        with selector.popover(profiles[current], width='stretch'):
+            with st.container(key='profile_menu'):
+                for identifier, name in profiles.items():
+                    entry, remove = st.columns([7, 1], gap='small')
+                    entry.button(name, key='profile_select_' + identifier,
+                        on_click=_switch_profile, args=(identifier,), width='stretch',
+                        type='primary' if identifier == current else 'secondary')
+                    remove.button('×', key='profile_remove_' + identifier,
+                        help='默认名单不能删除' if identifier == 'default' else '删除 ' + name,
+                        disabled=identifier == 'default', on_click=_request_profile_delete,
+                        args=(identifier,), width='stretch')
+                target = st.session_state.get('_workspace_delete_target')
+                if target in profiles and target != 'default':
+                    st.warning('确认删除：' + profiles[target])
+                    st.caption('移入回收区，所有设备均不再显示；可从“＋”恢复。')
+                    with st.form('profile_delete_form'):
+                        st.text_input('输入目标工作台名称确认', key='_workspace_delete_name')
+                        st.form_submit_button('确认删除', on_click=_delete_profile)
+                    st.button('取消', on_click=_cancel_profile_delete)
+        with create.container(key='profile_add'), st.popover('＋', help='新建工作台 / 恢复', width='stretch'):
             with st.form('profile_create_form', clear_on_submit=True):
                 st.text_input('名单名称', placeholder='例如：小王、小李', max_chars=20, key='_workspace_new_name')
                 st.form_submit_button('新建并切换', on_click=_create_profile)
@@ -197,15 +236,6 @@ def render_profile_controls():
                 st.caption('回收区：恢复后保留原有持仓、自选和设置。')
                 st.selectbox('恢复工作台', options=list(deleted), format_func=lambda k: deleted[k], key='_workspace_restore_id')
                 st.button('恢复并切换', on_click=_restore_profile)
-        with delete.popover('删除', width='stretch'):
-            if current == 'default':
-                st.caption('默认名单保留原有数据，不能删除。')
-            else:
-                st.warning('删除当前工作台：' + profiles[current])
-                st.caption('所有设备都将无法选择它；数据保留在回收区，可从“新建”恢复。')
-                with st.form('profile_delete_form'):
-                    st.text_input('输入当前工作台名称确认', key='_workspace_delete_name')
-                    st.form_submit_button('确认删除', on_click=_delete_profile)
     st.caption('当前：' + profiles[current] + ' · 本设备独立切换 · 同账号共享名单')
     if st.session_state.get('_workspace_error'):
         st.error(st.session_state.pop('_workspace_error'))
