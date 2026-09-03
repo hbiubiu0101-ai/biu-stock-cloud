@@ -128,7 +128,7 @@ def _show_loading_video(slot):
     if not uri: return
     # No visibility:hidden on the application. finally clears the slot; the CSS
     # timeout also removes the overlay if a provider hangs or the connection drops.
-    slot.markdown('''<style>
+    slot.html('''<style>
     #biu-loading-overlay {position:fixed;inset:0;z-index:9999;display:flex;
       align-items:center;justify-content:center;background:rgba(7,13,33,.82);
       pointer-events:none;animation:biu-loading-release .2s linear 25s forwards;}
@@ -139,7 +139,7 @@ def _show_loading_video(slot):
     @keyframes biu-loading-release {to {opacity:0;visibility:hidden;}}
     </style><div id="biu-loading-overlay" role="status" aria-label="正在加载">
     <div class="biu-loading-card"><video autoplay muted loop playsinline preload="auto" disablepictureinpicture src="'''
-        + uri + '''"></video><p>比比正在陪你加载…</p></div></div>''', unsafe_allow_html=True)
+        + uri + '''"></video><p>比比正在陪你加载…</p></div></div>''')
 
 
 # 使用较新Streamlit；加载完成/发生错误时均由finally移除视频遮罩。

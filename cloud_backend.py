@@ -27,14 +27,15 @@ class CloudStore:
             raise CloudError('名单标识无效，请重新选择名单。')
         self.profile_id = profile_id
 
-    def profiles(self):
+    def profiles(self, include_deleted=False):
         result = [{'id': 'default', 'name': '默认名单（原有数据）'}]
         for row in self._rows('biu_app_state', {'state_key': 'like.workspace:*',
                 'select': 'state_key,state_value', 'order': 'state_key'}):
             identifier = row['state_key'].removeprefix('workspace:')
             value = row.get('state_value')
             if re.fullmatch(r'[a-f0-9]{24}', identifier) and isinstance(value, dict) and isinstance(value.get('name'), str):
-                result.append({'id': identifier, 'name': value['name']})
+                if include_deleted or not value.get('deleted', False):
+                    result.append({'id': identifier, 'name': value['name'], 'deleted': bool(value.get('deleted', False))})
         return result[:1] + sorted(result[1:], key=lambda x: x['name'])
 
     def create_profile(self, name):
@@ -50,6 +51,16 @@ class CloudStore:
         if not created:
             raise CloudError('这个名单已存在，请直接切换，或换个名称。')
         return identifier
+
+    def set_profile_deleted(self, identifier, deleted):
+        if identifier == 'default':
+            raise CloudError('默认名单保留原有数据，不能删除。')
+        profiles = {item['id']: item for item in self.profiles(include_deleted=True)}
+        if identifier not in profiles:
+            raise CloudError('名单不存在，请刷新后重试。')
+        self._request('PATCH', 'biu_app_state', params={'state_key': 'eq.workspace:' + identifier},
+            body={'state_value': {'name': profiles[identifier]['name'], 'deleted': bool(deleted)},
+                  'updated_at': self._now()})
 
     def _scoped_key(self, key):
         return key if self.profile_id == 'default' else 'workspace_state:' + self.profile_id + ':' + key
