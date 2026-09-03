@@ -20,7 +20,7 @@ import akshare as ak
 TUSHARE_ENABLED = True  # BaoStock失败/无数据时自动尝试TuShare，无须手动开关。
 
 from cloud_backend import CloudError
-from cloud_access import cloud_store, login_gate, require_session, secret
+from cloud_access import cloud_store, login_gate, require_session, secret, render_profile_controls
 
 
 # 工作台主题：仅显示层，不改变策略、数据源、交易或通知规则。
@@ -46,30 +46,113 @@ def _load_display_table(label, key):
     return not light_mode or st.checkbox('加载'+label, key='light_table_'+key)
 
 
+def _parse_name_suggestions(body, query):
+    """Sina's public suggestion response; only accept matching SH/SZ stock records."""
+    import unicodedata
+    normalized = lambda text: ''.join(unicodedata.normalize('NFKC', text).split()).casefold()
+    payload = re.search(r'=\s*"([^"\r\n]*)"', body)
+    if not payload: return []
+    found = {}
+    for record in payload.group(1).split(';'):
+        fields = record.split(',')
+        if len(fields) < 5: continue
+        code, symbol, name = fields[2].strip(), fields[3].strip(), fields[4].strip()
+        if not re.fullmatch(r'[0-9]{6}', code) or symbol not in ('sh'+code, 'sz'+code): continue
+        if not name or len(name) > 40 or normalized(query) not in normalized(name): continue
+        found[code] = {'code': code, 'name': name}
+    matches = list(found.values())
+    exact = [item for item in matches if normalized(item['name']) == normalized(query)]
+    return (exact if exact else matches)[:20]
+
+
+@st.cache_data(ttl=3600, max_entries=256, show_spinner=False)
+def _stock_name_matches(query):
+    from urllib.parse import quote
+    try:
+        response = requests.get('https://suggest3.sinajs.cn/suggest/type=11,12&key='
+            + quote(query, safe='') + '&name=suggestvalue',
+            headers={'Referer': 'https://finance.sina.com.cn/', 'User-Agent': 'Mozilla/5.0'},
+            timeout=(5, 10), allow_redirects=False)
+        if response.status_code != 200: raise ValueError()
+        # The legacy suggestion endpoint declares GBK/GB18030, not UTF-8.
+        response.encoding = 'gb18030'
+        return _parse_name_suggestions(response.text, query)
+    except (requests.RequestException, ValueError):
+        raise ValueError('中文名称查询暂不可用，请稍后重试，或先输入六位股票代码。') from None
+
+
+def _resolve_stock_input(text):
+    import unicodedata
+    query = unicodedata.normalize('NFKC', str(text)).strip()
+    if re.fullmatch(r'[0-9]{6}', query): return [{'code': query, 'name': query}]
+    if not 1 <= len(query) <= 30 or not re.search(r'[\u4e00-\u9fff]', query):
+        raise ValueError('请输入六位股票代码或中文股票名称，例如603993或洛阳钼业。')
+    matches = _stock_name_matches(query)
+    if not matches: raise ValueError('没有找到匹配的沪深股票，请试完整名称或六位代码。')
+    return matches
+
+
+def _add_watch_code(code):
+    try:
+        cloud_store().add('watchlist', code)
+        st.session_state.watchlist = cloud_store().lists()['watchlist']
+        st.success('已加入当前名单自选：' + code)
+    except CloudError as exc:
+        st.error(str(exc) + ' 请刷新确认列表。')
+
+
 
 def _find_loading_video():
-    return None
+    from pathlib import Path
+    path = Path(__file__).resolve().with_name('bibi_loading.mp4')
+    return path if path.is_file() else None
 
 
 @st.cache_resource(max_entries=2)
 def _loading_video_uri(path, mtime_ns, size):
-    return ''
+    from pathlib import Path
+    if size > 3 * 1024 * 1024:
+        return ''  # Prevent an accidentally oversized replacement from stalling phones.
+    return 'data:video/mp4;base64,' + base64.b64encode(Path(path).read_bytes()).decode('ascii')
 
 
 def _show_loading_video(slot):
-    return None  # 云端不使用本地视频或全屏遮罩。
+    if not st.session_state.get('show_loading_animation', True): return
+    video = _find_loading_video()
+    if video is None: return
+    try:
+        stat = video.stat()
+        uri = _loading_video_uri(str(video), stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        return
+    if not uri: return
+    # No visibility:hidden on the application. finally clears the slot; the CSS
+    # timeout also removes the overlay if a provider hangs or the connection drops.
+    slot.markdown('''<style>
+    #biu-loading-overlay {position:fixed;inset:0;z-index:9999;display:flex;
+      align-items:center;justify-content:center;background:rgba(7,13,33,.82);
+      pointer-events:none;animation:biu-loading-release .2s linear 25s forwards;}
+    #biu-loading-overlay .biu-loading-card {width:min(340px,78vw);overflow:hidden;
+      border-radius:18px;box-shadow:0 20px 70px #0008;background:#111d3d;}
+    #biu-loading-overlay video {width:100%;aspect-ratio:4/3;display:block;object-fit:contain;}
+    #biu-loading-overlay p {margin:0;padding:12px;text-align:center;color:#d3e5ff;font-size:13px;}
+    @keyframes biu-loading-release {to {opacity:0;visibility:hidden;}}
+    </style><div id="biu-loading-overlay" role="status" aria-label="正在加载">
+    <div class="biu-loading-card"><video autoplay muted loop playsinline preload="auto" disablepictureinpicture src="'''
+        + uri + '''"></video><p>比比正在陪你加载…</p></div></div>''', unsafe_allow_html=True)
 
 
 # 使用较新Streamlit；加载完成/发生错误时均由finally移除视频遮罩。
 _page_loading = st.empty()
+st.sidebar.checkbox('显示比比加载动画', value=True, key='show_loading_animation',
+    help='手机轻量模式也可播放。加载很快时可能只闪一下；不强制等待视频播完。')
 try:
-    if not light_mode:
-        _show_loading_video(_page_loading)
+    _show_loading_video(_page_loading)
 
     col_title, col_refresh = st.columns([5, 1])
     with col_title:
         st.title("我的工作台")
-        st.caption("BIU WORKSPACE  /  行情 · 策略 · 数据")
+        render_profile_controls()
     with col_refresh:
         if st.button("🔄 刷新数据", use_container_width=True):
             st.cache_data.clear()
@@ -265,7 +348,8 @@ try:
                 if not store.reserve_notification(identity, code, today, 'buy' if signal == '买入' else 'sell'): continue
                 quote = st.session_state.get('sidebar_quote_snapshots', {}).get(code) or {}
                 name = quote.get('name', code)
-                message = (f'股票提醒｜{signal}\n股票：{name}（{code}）\n信号日期：{today}\n'
+                profile_name = st.session_state.get('active_profile_name', '默认名单')
+                message = (f'股票提醒｜{signal}\n名单：{profile_name}\n股票：{name}（{code}）\n信号日期：{today}\n'
                            '来源：当前策略当日收盘指令\n计划执行：下一可成交交易日开盘\n'
                            '仅为策略模拟信号，非实盘成交；不自动下单。')
                 status, detail = _feishu_send(config, message)
@@ -282,6 +366,7 @@ try:
             except CloudError as exc:
                 st.error(str(exc)); return
             st.caption('仅打开或手动刷新时检查。开启后，将持仓列表的股票代码、名称及当日买卖指令发送到你配置的飞书群；持仓灯不推送，不自动下单。')
+            st.caption('只检查当前名单。各名单的开关和发送记录独立，但共用 Secrets 中的飞书机器人；通知会标明名单名称。')
             st.caption('Webhook 和签名密钥只在 Streamlit 的 Secrets 配置，此处不显示也不保存密钥。')
             st.caption('机器人配置：' + ('已填写' if config['webhook'] and config['secret'] else '未完整填写'))
             with st.form('feishu_settings_form'):
@@ -446,27 +531,41 @@ try:
         with st.container(key='stock_lists_panel'):
             with st.expander('📋 自选股管理', expanded=True):
                 if st.button('🔄 刷新自选及持仓报价', use_container_width=True, key='refresh_watch_only'):
-                    fetch_stock_quote.clear()
-                    fetch_kline_with_fallback.clear()
-                    st.session_state.sidebar_quote_snapshots = {}
-                    st.session_state.holding_alert_state['checked'] = {}
-                    _check_holding_close_signals()
+                    watch_loading = st.empty()
+                    _show_loading_video(watch_loading)
+                    try:
+                        fetch_stock_quote.clear()
+                        fetch_kline_with_fallback.clear()
+                        st.session_state.sidebar_quote_snapshots = {}
+                        st.session_state.holding_alert_state['checked'] = {}
+                        _check_holding_close_signals()
+                        for code in dict.fromkeys(st.session_state.watchlist + st.session_state.manual_holdings):
+                            _sidebar_quote_snapshot(code)
+                    finally:
+                        watch_loading.empty()
                 with st.form('add_watch_form', clear_on_submit=True):
                     a, b = st.columns([3, 1], vertical_alignment='center')
-                    with a: new_code = st.text_input('添加股票代码', placeholder='例如603993',
+                    with a: new_code = st.text_input('添加股票代码或名称', placeholder='例如：洛阳钼业 / 603993',
                                                      label_visibility='collapsed')
                     with b: add_watch = st.form_submit_button('+', use_container_width=True)
                 if add_watch:
-                    code = new_code.strip()
-                    if len(code) != 6 or not code.isdigit():
-                        st.error('请输入6位数字代码')
-                    elif code in st.session_state.watchlist:
-                        st.warning('已存在')
-                    else:
-                        try:
-                            cloud_store().add('watchlist', code)
-                            st.session_state.watchlist = cloud_store().lists()['watchlist']
-                        except CloudError as exc: st.error(str(exc) + ' 请刷新确认列表。')
+                    st.session_state.pop('_watch_name_matches', None)
+                    st.session_state.pop('_watch_name_choice', None)
+                    try:
+                        matches = _resolve_stock_input(new_code)
+                        if len(matches) == 1:
+                            _add_watch_code(matches[0]['code'])
+                        else:
+                            st.session_state['_watch_name_matches'] = matches
+                    except ValueError as exc: st.error(str(exc))
+                if st.session_state.get('_watch_name_matches'):
+                    names = {row['code']: row['name'] for row in st.session_state['_watch_name_matches']}
+                    st.caption('找到多个结果，请选中股票后再加入。')
+                    selected = st.selectbox('选择要加入的股票', list(names),
+                        format_func=lambda code: names[code] + '（' + code + '）', key='_watch_name_choice')
+                    if st.button('加入当前名单自选', key='confirm_name_add'):
+                        _add_watch_code(selected)
+                        st.session_state.pop('_watch_name_matches', None)
                 if st.session_state.get('_holdings_load_error'): st.error(st.session_state['_holdings_load_error'])
                 notice = st.session_state.pop('_holdings_notice', None)
                 if notice: st.caption(notice)
@@ -1270,7 +1369,7 @@ try:
     with st.form("market_query_form"):
         sc1, sc2, sc3 = st.columns([3, 1, 1])
         with sc1:
-            search_code = st.text_input("代码", placeholder="603993", value=search_default,
+            search_code = st.text_input("股票代码或中文名称", placeholder="洛阳钼业 / 603993", value=search_default,
                                         label_visibility="collapsed", key="search_input")
         with sc2:
             period_choice = '日K'
@@ -1285,6 +1384,29 @@ try:
         with cd2:
             end_date = st.date_input("结束", value=_china_now().date(), max_value=_china_now().date())
 
+    if search_btn or st.session_state.get('force_query', False):
+        st.session_state.pop('_main_name_matches', None)
+        st.session_state.pop('_main_name_choice', None)
+        try:
+            matches = _resolve_stock_input(search_code)
+            if len(matches) == 1:
+                search_code = matches[0]['code']
+            else:
+                st.session_state['_main_name_matches'] = matches
+                search_btn = False
+                st.session_state['force_query'] = False
+        except ValueError as exc:
+            st.error(str(exc))
+            search_btn = False
+            st.session_state['force_query'] = False
+    if st.session_state.get('_main_name_matches'):
+        names = {row['code']: row['name'] for row in st.session_state['_main_name_matches']}
+        st.info('找到多个结果，请选择具体股票；下方若有图表，仍是上次查询结果。')
+        chosen = st.selectbox('选择要查询的股票', list(names),
+            format_func=lambda code: names[code] + '（' + code + '）', key='_main_name_choice')
+        if st.button('查询这只股票', key='confirm_name_query'):
+            search_code, search_btn = chosen, True
+            st.session_state.pop('_main_name_matches', None)
     search_code = search_code or st.session_state.get('current_code', '')
     period_changed = period_choice != st.session_state.get('current_period')
     qt = search_btn or auto_q or st.session_state.get('force_query', False) or (
