@@ -3,9 +3,180 @@ import hashlib
 import hmac
 import threading
 import time
+import secrets
+import re
 from collections import deque
 import streamlit as st
 from cloud_backend import CloudError, CloudStore
+
+REMEMBER_SECONDS = 7 * 24 * 3600
+
+
+def _remember_store():
+    return CloudStore(secret('SUPABASE_URL'), secret('SUPABASE_SECRET_KEY'))
+
+
+def _token_mac(payload):
+    # Server-only signing material. Password changes invalidate all saved tokens.
+    key = hmac.new(secret('SUPABASE_SECRET_KEY').encode(),
+                   ('biu-remember-v1:' + _fingerprint()).encode(), hashlib.sha256).digest()
+    return hmac.new(key, payload.encode(), hashlib.sha256).hexdigest()
+
+
+def _token_expiry(token):
+    if not isinstance(token, str) or not re.fullmatch(r'[0-9]{10}\.[a-f0-9]{64}\.[a-f0-9]{64}', token):
+        return 0
+    payload, signature = token.rsplit('.', 1)
+    expiry = int(payload.split('.')[0])
+    if not hmac.compare_digest(signature, _token_mac(payload)):
+        return 0
+    return expiry if time.time() < expiry <= time.time() + REMEMBER_SECONDS + 60 else 0
+
+
+def _token_key(token):
+    return 'login_session:' + hashlib.sha256(token.encode()).hexdigest()
+
+
+def _issue_remember_token():
+    require_session()
+    expiry = int(time.time()) + REMEMBER_SECONDS
+    payload = str(expiry) + '.' + secrets.token_hex(32)
+    token = payload + '.' + _token_mac(payload)
+    _remember_store().put_state(_token_key(token), {'expires': expiry,
+        'profile': st.session_state.get('active_profile', 'default')})
+    st.session_state['_remember_token'] = token
+    st.session_state['_remember_verified_at'] = time.time()
+    st.session_state['_auth_until'] = expiry
+    st.session_state['_remember_command'] = {'id': secrets.token_hex(8), 'action': 'write',
+                                            'token': token, 'expires': expiry}
+
+
+def _resume_remember_token(token):
+    expiry = _token_expiry(token)
+    if not expiry:
+        return False
+    row = _remember_store().state(_token_key(token))
+    if not isinstance(row, dict) or row.get('expires') != expiry:
+        return False
+    profile = row.get('profile', 'default')
+    if profile != 'default' and not re.fullmatch(r'[a-f0-9]{24}', str(profile)):
+        profile = 'default'
+    st.session_state['_auth_stamp'] = _fingerprint()
+    st.session_state['_auth_until'] = expiry
+    st.session_state['_remember_token'] = token
+    st.session_state['_remember_verified_at'] = time.time()
+    st.session_state['active_profile'] = profile
+    return True
+
+
+def _remember_browser():
+    # Fixed trusted JS only; no interpolation, third-party scripts or credentials.
+    bridge = _remember_component()
+    command = st.session_state.get('_remember_command', {'id': 'read', 'action': 'read'})
+    return bridge(data=command, key='_remember_bridge', on_result_change=lambda: None).result
+
+
+@st.cache_resource
+def _remember_component():
+    from streamlit.components.v2 import component
+    return component('biu_remember_device', js=r'''
+export default function({data, parentElement, setStateValue}) {
+  if (parentElement._biuRememberOp === data.id) return;
+  parentElement._biuRememberOp = data.id;
+  const name = '__Host-biu_remember_v1';
+  const backup = 'biu_remember_v1';
+  const read = () => (document.cookie.split(';').map(v => v.trim()).find(v => v.startsWith(name+'=')) || '').slice(name.length+1);
+  const readBackup = () => {
+    try {
+      const item = JSON.parse(localStorage.getItem(backup) || 'null');
+      if (item && typeof item.token === 'string' && item.expires > Math.floor(Date.now()/1000)) return item.token;
+      localStorage.removeItem(backup);
+    } catch (_) {}
+    return '';
+  };
+  let ok = true, token = '';
+  try {
+    if (data.action === 'write') {
+      if (location.protocol !== 'https:') throw new Error('HTTPS required');
+      const age = Math.max(0, Math.min(604800, data.expires - Math.floor(Date.now()/1000)));
+      let cookieOK = false, backupOK = false;
+      try {
+        document.cookie = name+'='+data.token+'; Path=/; Max-Age='+age+'; Secure; SameSite=Strict';
+        cookieOK = read() === data.token;
+      } catch (_) {}
+      try {
+        localStorage.setItem(backup, JSON.stringify({token:data.token, expires:data.expires}));
+        backupOK = readBackup() === data.token;
+      } catch (_) {}
+      ok = cookieOK || backupOK;
+    } else if (data.action === 'clear') {
+      try { document.cookie = name+'=; Path=/; Max-Age=0; Secure; SameSite=Strict'; } catch (_) {}
+      try { localStorage.removeItem(backup); } catch (_) {}
+      ok = !read() && !readBackup();
+    } else { token = read() || readBackup(); }
+  } catch (_) { ok = false; }
+  setStateValue('result', {id:data.id, ok, token});
+}
+''')
+
+
+@st.cache_resource
+def _loading_component():
+    from streamlit.components.v2 import component
+    return component('biu_modal_loading', js=r'''
+export default function({data}) {
+  const shield = document.createElement('dialog');
+  shield.className = 'biu-loading-shield';
+  shield.setAttribute('aria-label', '正在加载，请稍候');
+  shield.setAttribute('aria-modal', 'true');
+  shield.style.cssText = 'position:fixed;inset:0;z-index:2147483647;margin:0;border:0;padding:0;max-width:none;max-height:none;width:100vw;height:100dvh;background:rgba(7,13,33,.88);color:#d3e5ff;align-items:center;justify-content:center;overflow:hidden;';
+  const card = document.createElement('div');
+  card.style.cssText = 'width:min(340px,78vw);border-radius:18px;overflow:hidden;background:#111d3d;text-align:center;padding-bottom:12px;';
+  if (data.uri) {
+    const video = document.createElement('video');
+    video.src = data.uri;
+    video.autoplay = true; video.muted = true; video.loop = true; video.playsInline = true;
+    video.setAttribute('muted', ''); video.setAttribute('playsinline', '');
+    video.style.cssText = 'width:100%;aspect-ratio:4/3;display:block;object-fit:contain;';
+    card.appendChild(video);
+    video.play().catch(() => {});
+  }
+  const label = document.createElement('p');
+  label.textContent = data.uri ? '比比正在陪你加载…' : '正在加载，请稍候…';
+  card.appendChild(label);
+  const retry = document.createElement('button');
+  retry.textContent = '加载较久，重新打开页面';
+  retry.style.cssText = 'display:none;padding:10px;border:1px solid #7191c9;border-radius:8px;background:#20385d;color:white;';
+  retry.onclick = () => location.reload();
+  card.appendChild(retry); shield.appendChild(card); document.body.appendChild(shield);
+  const preventCancel = event => event.preventDefault();
+  shield.addEventListener('cancel', preventCancel);
+  if (shield.showModal) shield.showModal();
+  shield.style.display = 'flex';
+  // Native modal top layer covers existing dropdowns and traps keyboard focus.
+  // Capture guard is also used for browsers with incomplete dialog support.
+  const guard = event => {
+    if (!event.target.closest?.('.biu-loading-shield')) {
+      event.preventDefault(); event.stopImmediatePropagation();
+    }
+  };
+  const events = ['pointerdown', 'click', 'touchstart', 'keydown', 'wheel'];
+  events.forEach(name => document.addEventListener(name, guard, {capture:true, passive:false}));
+  const timer = setTimeout(() => {retry.style.display = 'inline-block';}, 30000);
+  return () => {
+    clearTimeout(timer);
+    events.forEach(name => document.removeEventListener(name, guard, true));
+    shield.removeEventListener('cancel', preventCancel);
+    if (shield.open && shield.close) shield.close();
+    shield.remove();
+  };
+}
+''')
+
+
+def render_loading(slot, uri):
+    with slot.container():
+        _loading_component()(data={'uri': uri}, key='loading_' + slot._get_delta_path_str())
 
 
 def secret(name):
@@ -28,6 +199,13 @@ def authorized():
 def require_session():
     if not authorized():
         raise CloudError('登录已过期，请刷新网页重新登录。')
+    token = st.session_state.get('_remember_token')
+    if token and time.time() - st.session_state.get('_remember_verified_at', 0) > 60:
+        row = _remember_store().state(_token_key(token))
+        if not _token_expiry(token) or not isinstance(row, dict) or row.get('expires') != _token_expiry(token):
+            st.session_state.pop('_auth_stamp', None)
+            raise CloudError('登录凭证已撤销或过期，请重新登录。')
+        st.session_state['_remember_verified_at'] = time.time()
 
 
 @st.cache_resource
@@ -58,11 +236,34 @@ def _login_submit():
     st.session_state['_login_error'] = _sign_in(
         st.session_state.get('_login_user', ''), st.session_state.get('_login_password', ''))
     st.session_state.pop('_login_password', None)
+    if not st.session_state['_login_error']:
+        st.session_state['_remember_checked'] = True
+        st.session_state.pop('_remember_token', None)
+        st.session_state.pop('_remember_verified_at', None)
+        if st.session_state.get('_login_remember', False):
+            try:
+                _issue_remember_token()
+            except CloudError:
+                st.session_state['_remember_warning'] = '已登录，但7天登录凭证保存失败；本次仅保持当前会话。'
+        else:
+            st.session_state['_remember_command'] = {'id': secrets.token_hex(8), 'action': 'clear'}
 
 
 def _logout():
+    token = st.session_state.get('_remember_token')
+    failed = False
+    if token:
+        try:
+            _remember_store()._request('DELETE', 'biu_app_state',
+                params={'state_key': 'eq.' + _token_key(token)})
+        except CloudError:
+            failed = True
     for key in list(st.session_state):
         del st.session_state[key]
+    st.session_state['_remember_checked'] = True
+    st.session_state['_remember_command'] = {'id': secrets.token_hex(8), 'action': 'clear'}
+    if failed:
+        st.session_state['_remember_warning'] = '已退出本页面，但服务器凭证撤销失败。请清除此网站数据；如设备遗失，请修改登录密码使旧凭证失效。'
 
 
 def login_gate():
@@ -76,19 +277,51 @@ def login_gate():
     if len(secret('APP_PASSWORD')) < 12:
         st.error('请在 Secrets 把 APP_PASSWORD 设置为至少12位的独立强密码。')
         st.stop()
+    # Streamlit exposes cookies from the initial browser connection. Restoring
+    # here also works before the asynchronous component has rendered.
+    if not authorized() and not st.session_state.get('_remember_checked'):
+        try:
+            cookie_token = st.context.cookies.get('__Host-biu_remember_v1', '')
+            if cookie_token and _resume_remember_token(cookie_token):
+                st.session_state['_remember_checked'] = True
+        except CloudError:
+            pass  # Component restoration/manual login remain available.
+    result = _remember_browser()
+    command = st.session_state.get('_remember_command', {})
+    # Mount/acknowledge the persistence component before expensive market loading.
+    # Otherwise a login rerun can begin loading before the browser receives its token.
+    if authorized() and command.get('action') == 'write' and (
+            not isinstance(result, dict) or result.get('id') != command.get('id')):
+        st.info('正在保存本设备的7天登录状态…')
+        if st.button('跳过保存，先进入工作台', key='_remember_skip'):
+            st.session_state['_remember_command'] = {'id': secrets.token_hex(8), 'action': 'read'}
+            st.rerun()
+        st.stop()
+    if isinstance(result, dict):
+        if not result.get('ok', False):
+            st.warning('本设备未能保存登录状态，下次可能需要重新登录。请使用同一浏览器、同一应用网址，并关闭无痕模式。')
+        if not authorized() and not st.session_state.get('_remember_checked') and result.get('id') == 'read':
+            try:
+                _resume_remember_token(result.get('token', ''))
+            except CloudError:
+                st.session_state['_remember_warning'] = '自动登录验证暂不可用，请手动登录。'
+            st.session_state['_remember_checked'] = True
+    if st.session_state.get('_remember_warning'):
+        st.warning(st.session_state.pop('_remember_warning'))
     if not authorized():
         # Remove prior private UI state before showing the login form.
         for key in list(st.session_state):
-            if not key.startswith('_login_'):
+            if not key.startswith(('_login_', '_remember_')):
                 del st.session_state[key]
         st.title('Biu · 登录工作台')
         with st.form('cloud_login'):
             st.text_input('账号', key='_login_user')
             st.text_input('密码', type='password', key='_login_password')
+            st.checkbox('记住登录7天（仅限自己的设备）', key='_login_remember', value=False)
             st.form_submit_button('登录', on_click=_login_submit)
         if st.session_state.get('_login_error'):
             st.error(st.session_state['_login_error'])
-        st.caption('同一账号可在多部手机登录；进入后选择各自名单。名单不是独立账号的隐私隔离。登录有效期12小时。')
+        st.caption('不勾选：当前会话12小时。勾选：本浏览器最多7天；清除网站数据或使用无痕模式后需重新登录。')
         st.stop()
     st.sidebar.button('退出登录', key='cloud_logout', on_click=_logout)
     st.sidebar.caption('云端共享工作台 · 每台设备独立选择名单')
@@ -106,12 +339,21 @@ def _set_active_profile(identifier, name):
     # quote widgets, candidates, notification toggles or cached results across lists.
     keep = {'_auth_stamp', '_auth_until', 'mobile_light_mode', 'show_loading_animation'}
     for key in list(st.session_state):
-        if key not in keep:
+        if key not in keep and not key.startswith('_remember_'):
             del st.session_state[key]
     st.session_state['active_profile'] = identifier
     st.session_state['active_profile_name'] = name
     st.session_state['_workspace_choice'] = identifier
     st.session_state['_workspace_notice'] = '当前名单：' + name
+    token = st.session_state.get('_remember_token')
+    if token and _token_expiry(token):
+        try:
+            # PATCH only: a stale tab must never recreate a revoked session row.
+            _remember_store()._request('PATCH', 'biu_app_state',
+                params={'state_key': 'eq.' + _token_key(token)},
+                body={'state_value': {'expires': _token_expiry(token), 'profile': identifier}})
+        except CloudError:
+            st.session_state['_remember_warning'] = '工作台已切换，但下次打开时的默认工作台未保存。'
 
 
 def _switch_profile(identifier=None):

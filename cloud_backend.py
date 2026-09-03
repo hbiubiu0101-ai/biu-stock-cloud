@@ -10,6 +10,64 @@ class CloudError(RuntimeError):
     pass
 
 
+class BaoStockGate:
+    """Bound the SDK's shared socket without changing Python's global sockets."""
+    def __init__(self):
+        import threading
+        self.lock = threading.Lock()
+
+    def __enter__(self):
+        import time
+        import baostock.util.socketutil as sdk
+        if not self.lock.acquire(timeout=15):
+            raise TimeoutError('行情连接正在忙，请稍后重试')
+        self.sdk, self.original, self.sockets = sdk, sdk.socket, []
+        deadline, original, opened = time.monotonic() + 40, self.original, self.sockets
+
+        class BoundedSocket:
+            def __init__(self, *args, **kwargs):
+                self.raw = original.socket(*args, **kwargs)
+                opened.append(self.raw)
+            def limit(self):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError('行情查询超时')
+                self.raw.settimeout(min(10, remaining))
+            def connect(self, *args):
+                self.limit()
+                return self.raw.connect(*args)
+            def send(self, *args):
+                self.limit()
+                return self.raw.send(*args)
+            def recv(self, *args):
+                self.limit()
+                data = self.raw.recv(*args)
+                if not data:
+                    raise ConnectionError('行情服务器已断开连接')
+                return data
+            def __getattr__(self, key):
+                return getattr(self.raw, key)
+
+        class SocketProxy:
+            socket = BoundedSocket
+            def __getattr__(self, key):
+                return getattr(original, key)
+
+        sdk.socket = SocketProxy()
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            for sock in self.sockets:
+                try:
+                    sock.close()
+                except OSError:
+                    pass
+        finally:
+            self.sdk.socket = self.original
+            self.lock.release()
+
+
 class CloudStore:
     def __init__(self, url, key, authorize=lambda: None, transport=None, profile_id='default'):
         if not re.fullmatch(r"https://[a-z0-9-]+\.supabase\.co/?", url):
@@ -110,12 +168,12 @@ class CloudStore:
         if self.profile_id != 'default':
             prefix = 'workspace_list:' + self.profile_id + ':'
             for row in self._rows('biu_app_state', {'state_key': 'like.' + prefix + '*',
-                    'select': 'state_key,state_value', 'order': 'state_key'}):
+                    'select': 'state_key,state_value,updated_at', 'order': 'updated_at.asc,state_key.asc'}):
                 kind, code = row['state_key'].removeprefix(prefix).split(':', 1)
                 self._validate_stock(kind, code)
                 result[kind].append(code)
             return result
-        for row in self._rows('biu_stock_lists', {'select': 'list_type,stock_code', 'order': 'list_type,stock_code'}):
+        for row in self._rows('biu_stock_lists', {'select': 'list_type,stock_code,created_at', 'order': 'created_at.asc,list_type.asc,stock_code.asc'}):
             kind, code = row.get('list_type'), row.get('stock_code')
             self._validate_stock(kind, code)
             result[kind].append(code)
@@ -132,11 +190,12 @@ class CloudStore:
             self._request('POST', 'biu_app_state', params={'on_conflict': 'state_key'}, body={
                 'state_key': 'workspace_list:' + self.profile_id + ':' + kind + ':' + code,
                 'state_value': {'code': code}, 'updated_at': self._now()},
-                prefer='resolution=ignore-duplicates,return=minimal')
+                prefer='resolution=merge-duplicates,return=minimal')
             return
         # One row per mutation: concurrent phones do not replace each other's lists.
         self._request('POST', 'biu_stock_lists', params={'on_conflict': 'list_type,stock_code'},
-            body={'list_type': kind, 'stock_code': code}, prefer='resolution=ignore-duplicates,return=minimal')
+            body={'list_type': kind, 'stock_code': code, 'created_at': self._now()},
+            prefer='resolution=merge-duplicates,return=minimal')
 
     def remove(self, kind, code):
         self._validate_stock(kind, code)
