@@ -1047,7 +1047,7 @@ try:
         # 入场附加过滤：均线偏离上限及成交额活跃度范围。
         df['buy_sig1'] &= df['M10'] < df['M30'] * 1000000.0
         activity = df['M5'] / df['M30']
-        df['buy_sig1'] &= (df['MA5'] / df['MA120'] <= 1.8) & (activity >= 0.0) & (activity <= 1000.0)
+        df['buy_sig1'] &= (df['MA5'] / df['MA120'] <= 1.6) & (activity >= 0.0) & (activity <= 1000.0)
         # 六道候选：均线入场，成交额和偏离过滤；买入不要求MACD多头。
         buy_activity = df['M2'] / df['M30']
         df['buy_sig1'] &= (buy_activity >= 0.2) & (buy_activity <= 2.2)
@@ -1134,7 +1134,7 @@ try:
                 price_return = float(row['close']) / entry['price'] - 1.0
                 stale_exit = (holding_bars >= 90 and price_return < 0.08
                               and float(row['close']) < float(row['MA42']))
-                loss_exit = price_return <= -0.35
+                loss_exit = price_return <= -0.33
                 regular_exit = holding_bars >= 12 and score >= 2
                 if pending is None and (loss_exit or stale_exit or regular_exit):
                     labels = [label for key, label in [
