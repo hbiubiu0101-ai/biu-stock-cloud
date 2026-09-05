@@ -4,6 +4,7 @@ import re
 import hashlib
 import unicodedata
 import requests
+import json
 
 
 class CloudError(RuntimeError):
@@ -237,6 +238,41 @@ class CloudStore:
         return self._request('GET', 'biu_notifications', params={
             'event_key': 'not.like.profile:*' if self.profile_id == 'default' else 'like.profile:' + self.profile_id + ':*',
             'select': 'signal_date,stock_code,signal_type,status', 'order': 'created_at.desc,event_key', 'limit': 20})
+
+    def market_bars(self, symbol, frequency, start=None, end=None):
+        if not re.fullmatch(r'[A-Za-z0-9_.-]{2,32}', symbol): raise CloudError('证券标识无效。')
+        if frequency not in ('day', '1', '5', '15', '30', '60'): raise CloudError('K线周期无效。')
+        params = {'symbol': 'eq.' + symbol, 'frequency': 'eq.' + frequency,
+                  'select': 'bar_time,open,high,low,close,volume,amount,source,is_closed', 'order': 'bar_time.asc'}
+        if start: params['bar_time'] = 'gte.' + str(start)
+        rows = self._rows('biu_market_bars', params)
+        return [r for r in rows if not end or str(r.get('bar_time', '')) <= str(end)]
+
+    def put_market_bars(self, symbol, frequency, rows, source):
+        if not rows: return
+        if not re.fullmatch(r'[A-Za-z0-9_.-]{2,32}', symbol): raise CloudError('证券标识无效。')
+        if frequency not in ('day', '1', '5', '15', '30', '60'): raise CloudError('K线周期无效。')
+        payload = [{'symbol': symbol, 'frequency': frequency, 'bar_time': str(r['bar_time']),
+            'open': float(r['open']), 'high': float(r['high']), 'low': float(r['low']), 'close': float(r['close']),
+            'volume': float(r.get('volume', 0) or 0), 'amount': float(r.get('amount', 0) or 0),
+            'source': str(source)[:40], 'is_closed': bool(r.get('is_closed', True)), 'updated_at': self._now()} for r in rows]
+        for offset in range(0, len(payload), 300):
+            self._request('POST', 'biu_market_bars', params={'on_conflict': 'symbol,frequency,bar_time'},
+                body=payload[offset:offset + 300], prefer='resolution=merge-duplicates,return=minimal')
+
+    def analysis(self, cache_key, default=None):
+        rows = self._request('GET', 'biu_analysis_cache', params={'cache_key': 'eq.' + cache_key,
+            'select': 'payload', 'limit': 1})
+        return rows[0]['payload'] if rows else default
+
+    def put_analysis(self, cache_key, category, payload, symbol=None, strategy_version=None, data_end_date=None):
+        if not re.fullmatch(r'[A-Za-z0-9_.:-]{8,160}', cache_key): raise CloudError('缓存标识无效。')
+        try: clean = json.loads(json.dumps(payload, ensure_ascii=False, allow_nan=False, default=str))
+        except (TypeError, ValueError): raise CloudError('分析结果无法安全保存。') from None
+        self._request('POST', 'biu_analysis_cache', params={'on_conflict': 'cache_key'}, body={
+            'cache_key': cache_key, 'category': str(category)[:32], 'symbol': symbol,
+            'strategy_version': strategy_version, 'data_end_date': data_end_date,
+            'payload': clean, 'updated_at': self._now()}, prefer='resolution=merge-duplicates,return=minimal')
 
     @staticmethod
     def _now():

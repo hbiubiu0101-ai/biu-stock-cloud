@@ -16,6 +16,9 @@ import matplotlib.pyplot as plt
 from io import BytesIO
 import base64
 import akshare as ak
+from market_data import (parse_sina_suggestions, security_type, fetch_security_quote,
+                         fetch_minute_kline, fetch_index_quotes, fetch_commodity_quotes,
+                         bubble_html)
 
 TUSHARE_ENABLED = True  # BaoStock失败/无数据时自动尝试TuShare，无须手动开关。
 
@@ -35,8 +38,16 @@ for _biu_key, _biu_value in {
 
 st.set_page_config(page_title="Biu · 我的工作台", layout="wide")
 login_gate()  # 在所有行情请求、列表读取和通知操作之前验证登录。
-st.caption('云端版本：20260903-sidebar-silent4 · 按最后添加时间排序')
+st.caption('云端版本：20260905-market-incremental1 · 分钟线/ETF/LOF/市场环境/定时汇总')
 st.markdown('<style>\n:root {color-scheme:dark; --biu-bg:#070d21; --biu-panel:#111d3d; --biu-line:rgba(132,157,243,.24); --biu-text:#edf3ff; --biu-muted:#a5b3d3;}\n.stApp {background:radial-gradient(ellipse at 12% 0%,#142f63 0%,transparent 48%),radial-gradient(ellipse at 100% 40%,#29144d 0%,transparent 55%),var(--biu-bg);color:var(--biu-text);}\n[data-testid="stHeader"] {background:rgba(7,13,33,.92);}\n[data-testid="stMainBlockContainer"], .main .block-container {padding-top:2.5rem;padding-bottom:2rem;max-width:1740px;}\n[data-testid="stSidebar"] {background:linear-gradient(170deg,#142958 0%,#101c3b 42%,#17142f 100%);border-right:1px solid var(--biu-line);}\n[data-testid="stSidebarUserContent"] {padding:1.2rem 1rem 2rem;}\nh1,h2,h3,h4,h5,h6 {color:#f3f6ff!important;letter-spacing:.01em;}\nh1 {font-size:2rem!important;font-weight:750!important;}\nh2,h3 {font-size:1.1rem!important;}\n[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {color:var(--biu-muted)!important;line-height:1.65;}\n.biu-brand {font-size:30px;font-weight:800;letter-spacing:-1px;color:#57baff;margin-bottom:4px;}\n.biu-eyebrow {font-size:11px;letter-spacing:2px;color:#9cafdb;margin:0 0 12px;}\n.biu-nav {display:flex;gap:10px;flex-wrap:wrap;padding:4px 0 16px;}\n.biu-nav a {display:block;padding:9px 18px;border:1px solid var(--biu-line);background:#16284a;border-radius:10px;color:#d3e5ff!important;text-decoration:none!important;font-size:13px;}\n.biu-nav a:hover {background:#234477;border-color:#54b6ff;}\n.biu-nav a:focus-visible {outline:2px solid #79d6ff;outline-offset:3px;}\n.biu-anchor {scroll-margin-top:75px;}\n[data-testid="stForm"], [data-testid="stExpander"], .st-key-biu_kline_panel {border:1px solid var(--biu-line)!important;border-radius:16px!important;background:linear-gradient(115deg,rgba(24,53,100,.64),rgba(39,25,74,.65));box-shadow:0 10px 28px rgba(0,0,0,.1);}\n[data-testid="stForm"] {padding:18px!important;}\n[data-testid="stExpander"] details>summary {background:rgba(39,57,102,.25);border-radius:15px;padding:14px 16px;color:#edf3ff;}\n[data-testid="stExpander"] details>summary:hover {background:rgba(75,99,164,.24);}\n.st-key-biu_kline_panel {padding:16px!important;}\n[data-testid="stMetric"] {border:1px solid var(--biu-line);border-radius:14px;padding:18px 16px;min-height:122px;background:linear-gradient(125deg,rgba(30,81,148,.7),rgba(48,27,96,.75));}\n[data-testid="stMetricLabel"] {color:#b8c9ed;font-size:13px;}\n[data-testid="stMetricValue"] {color:#f1f6ff;font-size:clamp(20px,1.8vw,30px)!important;font-weight:650;font-variant-numeric:tabular-nums;}\n[data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] [data-testid="stMetric"]) {flex-wrap:wrap;gap:12px;}\n[data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] [data-testid="stMetric"]) > [data-testid="stColumn"] {flex:1 1 150px;min-width:150px;}\n[data-testid="stButton"] button, [data-testid="stFormSubmitButton"] button, [data-testid="stDownloadButton"] button {border:1px solid rgba(120,156,249,.4);background:#20385d;color:#e8f3ff;border-radius:10px;min-height:40px;transition:background .12s,border-color .12s;}\n[data-testid="stFormSubmitButton"] button {background:linear-gradient(100deg,#087bc3,#6d46d7);border-color:#628dff;font-weight:600;}\n[data-testid="stButton"] button:hover, [data-testid="stDownloadButton"] button:hover {background:#304c80;border-color:#77c7ff;color:white;}\nbutton:focus-visible {outline:2px solid #87dcff!important;outline-offset:2px;}\nbutton:disabled {opacity:.46;}\n[data-baseweb="input"], [data-baseweb="base-input"], [data-baseweb="select"]>div, [data-baseweb="textarea"] {background:#101b36!important;border-color:#44567b!important;color:#edf3ff!important;border-radius:9px;}\ninput,textarea {color:#edf3ff!important;caret-color:#65ccff;}\ninput::placeholder,textarea::placeholder {color:#879bc1!important;}\n[data-testid="stWidgetLabel"] p {color:#b9c8e7;}\n[data-testid="stDataFrame"] {border:1px solid var(--biu-line);border-radius:10px;overflow:hidden;}\n[data-testid="stAlert"] {border-radius:12px;border:1px solid var(--biu-line);}\n.stock-list-heading {color:#a8bee8!important;}\n.stock-list-cell {color:#e1ebff;}\n[class*="st-key-stock_row_"] {border-bottom:1px solid rgba(129,155,216,.08);}\n[class*="st-key-stock_row_"] button {background:rgba(43,66,111,.4);border-color:rgba(129,155,216,.28);}\n.js-plotly-plot .plotly .modebar {background:transparent!important;}\n.js-plotly-plot .plotly .modebar-btn path {fill:#9bb3de!important;}\nhr {border-color:var(--biu-line)!important;}\n@media(min-width:1100px) {[data-testid="stSidebar"] {min-width:410px!important;max-width:410px!important;}}\n@media(max-width:768px) {\n [data-testid="stMainBlockContainer"],.main .block-container {padding:3rem .8rem 1.5rem!important;}\n h1 {font-size:1.5rem!important;}\n [data-testid="stForm"],.st-key-biu_kline_panel {padding:12px!important;}\n [data-testid="stMetric"] {padding:14px 12px;min-height:105px;}\n [data-testid="stMetricValue"] {font-size:22px!important;}\n [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] [data-testid="stMetric"]) > [data-testid="stColumn"] {flex:1 1 calc(50% - 12px);min-width:130px;}\n [data-testid="stSidebar"] {min-width:0!important;max-width:96vw!important;}\n .biu-nav {gap:7px;}\n .biu-nav a {padding:8px 11px;font-size:12px;}\n .st-key-biu_kline_panel {padding:4px!important;}\n}\n@media(prefers-reduced-motion:reduce) {* {transition:none!important;}}\n</style>', unsafe_allow_html=True)
+st.markdown('''<style>
+.st-key-market_a_launch [data-testid="stPopoverButton"] button,.st-key-market_goods_launch [data-testid="stPopoverButton"] button {width:146px!important;height:146px!important;border-radius:50%!important;font-size:22px!important;font-weight:800!important;background:radial-gradient(circle at 35% 28%,#ff9e90,#ef3340 55%,#8f0e2a)!important;box-shadow:0 16px 38px rgba(239,51,64,.28)!important;}
+.st-key-market_goods_launch [data-testid="stPopoverButton"] button {background:radial-gradient(circle at 35% 28%,#ffd37f,#d68723 58%,#663713)!important;}
+.bubble-field {display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:14px;padding:12px 4px 20px;}
+.market-bubble {flex:none;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8px;border:1px solid rgba(255,255,255,.18);box-shadow:inset 0 0 24px rgba(255,255,255,.08),0 8px 20px rgba(0,0,0,.18);}
+.market-bubble b {font-size:13px}.market-bubble span {font-size:15px;font-weight:800}.market-bubble small {font-size:10px;opacity:.78}.market-bubble.up{background:radial-gradient(circle at 35% 25%,#ffaaa4,#bc2336)}.market-bubble.down{background:radial-gradient(circle at 35% 25%,#72d5b2,#14705a)}.market-bubble.flat{background:#33446b}
+@media(max-width:768px){.st-key-market_a_launch [data-testid="stPopoverButton"] button,.st-key-market_goods_launch [data-testid="stPopoverButton"] button{width:112px!important;height:112px!important;font-size:18px!important}.market-bubble{transform:scale(.9);margin:-5px}}
+</style>''', unsafe_allow_html=True)
 st.sidebar.markdown('<div class="biu-brand">Biu</div><div class="biu-eyebrow">MY STOCK WORKSPACE</div>', unsafe_allow_html=True)
 
 # Display-only preference: session state is isolated per browser session.
@@ -48,7 +59,6 @@ def _load_display_table(label, key):
 
 
 def _parse_name_suggestions(body, query):
-    """Sina's public suggestion response; only accept matching SH/SZ stock records."""
     import unicodedata
     normalized = lambda text: ''.join(unicodedata.normalize('NFKC', text).split()).casefold()
     payload = re.search(r'=\s*"([^"\r\n]*)"', body)
@@ -58,19 +68,19 @@ def _parse_name_suggestions(body, query):
         fields = record.split(',')
         if len(fields) < 5: continue
         code, symbol, name = fields[2].strip(), fields[3].strip(), fields[4].strip()
-        if not re.fullmatch(r'[0-9]{6}', code) or symbol not in ('sh'+code, 'sz'+code): continue
+        if not re.fullmatch(r'[0-9]{6}', code) or symbol not in ('sh'+code, 'sz'+code, 'bj'+code): continue
         if not name or len(name) > 40 or normalized(query) not in normalized(name): continue
         found[code] = {'code': code, 'name': name}
     matches = list(found.values())
     exact = [item for item in matches if normalized(item['name']) == normalized(query)]
-    return (exact if exact else matches)[:20]
+    return (exact if exact else matches)[:30]
 
 
 @st.cache_data(ttl=3600, max_entries=256, show_spinner=False)
 def _stock_name_matches(query):
     from urllib.parse import quote
     try:
-        response = requests.get('https://suggest3.sinajs.cn/suggest/type=11,12&key='
+        response = requests.get('https://suggest3.sinajs.cn/suggest/type=11,12,13,14,15&key='
             + quote(query, safe='') + '&name=suggestvalue',
             headers={'Referer': 'https://finance.sina.com.cn/', 'User-Agent': 'Mozilla/5.0'},
             timeout=(5, 10), allow_redirects=False)
@@ -79,7 +89,7 @@ def _stock_name_matches(query):
         response.encoding = 'gb18030'
         return _parse_name_suggestions(response.text, query)
     except (requests.RequestException, ValueError):
-        raise ValueError('中文名称查询暂不可用，请稍后重试，或先输入六位股票代码。') from None
+        raise ValueError('证券名称查询暂不可用，请稍后重试，或先输入六位代码。') from None
 
 
 def _resolve_stock_input(text):
@@ -87,9 +97,9 @@ def _resolve_stock_input(text):
     query = unicodedata.normalize('NFKC', str(text)).strip()
     if re.fullmatch(r'[0-9]{6}', query): return [{'code': query, 'name': query}]
     if not 1 <= len(query) <= 30 or not re.search(r'[\u4e00-\u9fff]', query):
-        raise ValueError('请输入六位股票代码或中文股票名称，例如603993或洛阳钼业。')
+        raise ValueError('请输入六位证券代码或中文名称，例如603993、510300或沪深300ETF。')
     matches = _stock_name_matches(query)
-    if not matches: raise ValueError('没有找到匹配的沪深股票，请试完整名称或六位代码。')
+    if not matches: raise ValueError('没有找到匹配的A股、ETF或LOF，请试完整名称或六位代码。')
     return matches
 
 
@@ -176,6 +186,11 @@ try:
     # ========== 关键函数（完整保留） ==========
     @st.cache_data(ttl=60, show_spinner=False)
     def fetch_stock_quote(code):
+        try:
+            quote = fetch_security_quote(str(code).strip())
+            if quote: return quote
+        except Exception:
+            pass
         code_str = str(code).strip()
         symbol = f"sh{code_str}" if code_str.startswith(('6', '688', '689')) else f"sz{code_str}"
         url = f"https://hq.sinajs.cn/list={symbol}"
@@ -596,7 +611,8 @@ try:
                             st.session_state['_watch_name_matches'] = matches
                     except ValueError as exc: st.error(str(exc))
                 if st.session_state.get('_watch_name_matches'):
-                    names = {row['code']: row['name'] for row in st.session_state['_watch_name_matches']}
+                    names = {row['code']: row['name'] + '｜' + security_type(row['code'], row['name'])
+                             for row in st.session_state['_watch_name_matches']}
                     st.caption('找到多个结果，请选中股票后再加入。')
                     selected = st.selectbox('选择要加入的股票', list(names),
                         format_func=lambda code: names[code] + '（' + code + '）', key='_watch_name_choice')
@@ -935,19 +951,81 @@ try:
 
     @st.cache_data(ttl=300, show_spinner=False)
     def fetch_kline_with_fallback(code, start_date, end_date, period='day'):
-        if period != 'day':
-            st.error('仅允许日线，已阻止其他周期请求')
+        if period in ('1', '5', '15', '30', '60'):
+            try:
+                saved = cloud_store().market_bars(code, period, start_date, end_date)
+                saved_frame = pd.DataFrame(saved).rename(columns={'bar_time': 'date'})
+                if not saved_frame.empty:
+                    saved_frame['date'] = pd.to_datetime(saved_frame['date'], errors='coerce').dt.tz_localize(None)
+            except CloudError:
+                saved_frame = pd.DataFrame()
+            try:
+                fresh = fetch_minute_kline(code, int(period))
+            except Exception as exc:
+                fresh = pd.DataFrame(); fetch_error = _provider_error(exc)
+            if fresh is not None and not fresh.empty:
+                try:
+                    now = _china_now(); last_time = fresh['date'].max()
+                    rows = []
+                    for _, row in fresh.iterrows():
+                        rows.append({'bar_time': pd.Timestamp(row['date']).isoformat(), **{
+                            key: float(row.get(key, 0) or 0) for key in ['open','high','low','close','volume','amount']},
+                            'is_closed': pd.Timestamp(row['date']) < now.tz_localize(None) - pd.Timedelta(minutes=int(period))})
+                    cloud_store().put_market_bars(code, period, rows, fresh.attrs.get('source', '腾讯分钟线'))
+                except CloudError:
+                    pass
+                combined = pd.concat([saved_frame, fresh], ignore_index=True) if not saved_frame.empty else fresh.copy()
+                combined = combined.drop_duplicates('date', keep='last').sort_values('date').reset_index(drop=True)
+                combined.attrs.update(source=fresh.attrs.get('source', '腾讯分钟线'), period=period, adjustment='qfq')
+                return combined
+            if not saved_frame.empty:
+                saved_frame.attrs.update(source='Supabase已保存分钟线', period=period, adjustment='qfq')
+                return saved_frame
+            st.error('分钟线暂不可用：' + locals().get('fetch_error', '接口未返回数据'))
             return None
+        if period != 'day': return None
+        saved_frame = pd.DataFrame()
+        try:
+            saved_rows = cloud_store().market_bars(code, 'day', pd.Timestamp(start_date).isoformat(),
+                                                   pd.Timestamp(end_date).isoformat())
+            saved_frame = pd.DataFrame(saved_rows).rename(columns={'bar_time': 'date'})
+            if not saved_frame.empty:
+                saved_frame['date'] = pd.to_datetime(saved_frame['date'], errors='coerce', utc=True).dt.tz_localize(None)
+                saved_frame = saved_frame.dropna(subset=['date']).sort_values('date')
+                if saved_frame['date'].max().normalize() >= pd.Timestamp(end_date).normalize():
+                    saved_frame.attrs.update(source=str(saved_frame.iloc[-1].get('source', 'Supabase')),
+                                             adjustment='qfq', period='day', fallback_notes='读取已保存日K')
+                    return saved_frame[['date','open','high','low','close','volume','amount']].reset_index(drop=True)
+        except CloudError:
+            saved_frame = pd.DataFrame()
         # Always replace the whole requested series; never splice providers.
         failures = []
         for name, fetch in [('BaoStock', fetch_kline_baostock), ('TuShare', fetch_kline_tushare)]:
             try:
-                frame = fetch(code, start_date, end_date, period)
+                fetch_start = start_date
+                if not saved_frame.empty and str(saved_frame.iloc[-1].get('source', '')) == name:
+                    fetch_start = max(pd.Timestamp(start_date), saved_frame['date'].max() - pd.Timedelta(days=15)).strftime('%Y%m%d')
+                frame = fetch(code, fetch_start, end_date, period)
                 if frame is None or frame.empty:
                     failures.append(name + '无数据');
                     continue
                 frame = frame.copy()
+                if not saved_frame.empty and fetch_start != start_date:
+                    overlap = saved_frame[['date','close']].merge(frame[['date','close']], on='date', suffixes=('_old','_new'))
+                    aligned = (not overlap.empty and ((overlap.close_old / overlap.close_new - 1).abs() < 0.001).all())
+                    if aligned:
+                        frame = pd.concat([saved_frame[['date','open','high','low','close','volume','amount']], frame],
+                                          ignore_index=True).drop_duplicates('date', keep='last').sort_values('date')
+                    else:
+                        frame = fetch(code, start_date, end_date, period)
                 frame.attrs.update(source=name, adjustment='qfq', period=period, fallback_notes='；'.join(failures))
+                try:
+                    rows = [{'bar_time': pd.Timestamp(r.date).isoformat(),
+                             **{k: float(getattr(r, k, 0) or 0) for k in ['open','high','low','close','volume','amount']},
+                             'is_closed': True} for r in frame.itertuples()]
+                    cloud_store().put_market_bars(code, 'day', rows, name)
+                except CloudError:
+                    pass
                 return frame
             except Exception as exc:
                 # Show actionable provider errors, with all credentials and URLs redacted.
@@ -1394,6 +1472,29 @@ try:
     with st.sidebar:
         render_watchlist()
 
+    @st.cache_data(ttl=180, show_spinner=False)
+    def _market_index_snapshot():
+        return fetch_index_quotes()
+
+    @st.cache_data(ttl=300, show_spinner=False)
+    def _market_goods_snapshot():
+        return fetch_commodity_quotes()
+
+    st.subheader('市场环境')
+    launch_a, launch_b, launch_space = st.columns([1, 1, 5])
+    with launch_a, st.container(key='market_a_launch'), st.popover('缅A', help='查看A股主要大盘指数'):
+        try:
+            rows = _market_index_snapshot()
+            if rows: st.markdown(bubble_html(rows, 'A股大盘'), unsafe_allow_html=True)
+            else: st.caption('大盘数据暂不可用，保留上次已保存数据。')
+        except Exception: st.caption('大盘接口暂不可用，不影响个股功能。')
+    with launch_b, st.container(key='market_goods_launch'), st.popover('大宗商品', help='查看黄金及主要商品'):
+        try:
+            rows = _market_goods_snapshot()
+            if rows: st.markdown(bubble_html(rows, '大宗商品'), unsafe_allow_html=True)
+            else: st.caption('商品数据暂不可用，保留上次已保存数据。')
+        except Exception: st.caption('商品接口暂不可用，不影响个股功能。')
+
     # ========== 主界面 ==========
     if st.session_state.get('target_code'):
         search_default = st.session_state.target_code
@@ -1411,11 +1512,11 @@ try:
     with st.form("market_query_form"):
         sc1, sc2, sc3 = st.columns([3, 1, 1])
         with sc1:
-            search_code = st.text_input("股票代码或中文名称", placeholder="洛阳钼业 / 603993", value=search_default,
+            search_code = st.text_input("证券代码或中文名称", placeholder="洛阳钼业 / 603993 / 沪深300ETF", value=search_default,
                                         label_visibility="collapsed", key="search_input")
         with sc2:
-            period_choice = '日K'
-            st.caption('仅日K（其他周期已锁定）')
+            period_choice = st.selectbox('周期', ['日K', '60分钟K', '30分钟K', '15分钟K', '5分钟K', '1分钟K'],
+                                         label_visibility='collapsed', key='period_select')
         with sc3:
             search_btn = st.form_submit_button("🔍 确认查询", use_container_width=True,
                                                on_click=_request_main_refresh)
@@ -1443,7 +1544,8 @@ try:
             search_btn = False
             st.session_state['force_query'] = False
     if st.session_state.get('_main_name_matches'):
-        names = {row['code']: row['name'] for row in st.session_state['_main_name_matches']}
+        names = {row['code']: row['name'] + '｜' + security_type(row['code'], row['name'])
+                 for row in st.session_state['_main_name_matches']}
         st.info('找到多个结果，请选择具体股票；下方若有图表，仍是上次查询结果。')
         chosen = st.selectbox('选择要查询的股票', list(names),
             format_func=lambda code: names[code] + '（' + code + '）', key='_main_name_choice')
@@ -1452,8 +1554,7 @@ try:
             st.session_state.pop('_main_name_matches', None)
     search_code = search_code or st.session_state.get('current_code', '')
     period_changed = period_choice != st.session_state.get('current_period')
-    qt = search_btn or auto_q or st.session_state.get('force_query', False) or (
-                bool(st.session_state.get('current_code')) and st.session_state.get('current_period') != '日K')
+    qt = search_btn or auto_q or st.session_state.get('force_query', False) or period_changed
     if qt and search_code:
         st.session_state['force_query'] = False
     cc = st.session_state.get('current_code')
@@ -1477,8 +1578,7 @@ try:
             quote = fetch_stock_quote(ci)
             if not quote:
                 fallback_df = fetch_kline_with_fallback(ci, ss, es,
-                                                        {'日K': 'day', '30分钟K': '30', '周K': 'week', '月K': 'month'}[
-                                                            period_choice])
+                                                        {'日K':'day','60分钟K':'60','30分钟K':'30','15分钟K':'15','5分钟K':'5','1分钟K':'1'}[period_choice])
                 if fallback_df is not None and not fallback_df.empty:
                     last = fallback_df.iloc[-1]
                     prev = float(fallback_df.iloc[-2]['close']) if len(fallback_df) > 1 else float(last['close'])
@@ -1502,19 +1602,8 @@ try:
                 with c4:
                     st.metric("📈 成交量", f"{quote['volume'] / 10000:.2f} 万手")
 
-                if period_choice == '分时':
-                    idf = fetch_intraday_data(ci)
-                    if idf is not None and not idf.empty:
-                        st.subheader("📈 分时图")
-                        f = plot_intraday(idf, quote['name'])
-                        if f:
-                            st.plotly_chart(f, use_container_width=True)
-                        else:
-                            st.warning("绘制失败")
-                    else:
-                        st.warning("无分时数据")
-                else:
-                    pm = {'日K': 'day', '30分钟K': '30', '周K': 'week', '月K': 'month'}
+                if True:
+                    pm = {'日K':'day','60分钟K':'60','30分钟K':'30','15分钟K':'15','5分钟K':'5','1分钟K':'1'}
                     sig, price, df_k = get_signals_and_kline(ci, ss, es, pm.get(period_choice, 'day'))
                     if sig is not None and df_k is not None:
                         # 画图、原始表及下载只用本次指定周期的同一份数据。
@@ -1566,13 +1655,24 @@ try:
                                         st.session_state.update(ic=draft_ic, bsd=draft_bsd, bed=draft_bed)
                                 ic, bsd, bed = st.session_state.ic, st.session_state.bsd, st.session_state.bed
 
-                                # 保留调用兼容，旧参数不再参与统一策略计算。
-                                result = cached_backtest_strategy(
-                                    df_k, initial_cash=ic, backtest_start=bsd, backtest_end=bed,
-                                    buy_threshold=buy_thresh, sell_threshold=sell_thresh,
-                                    signal4_lookback=sig4_lookback, signal4_threshold=sig4_threshold,
-                                    cooling_params=cooling_params
-                                )
+                                # Supabase跨重启缓存；策略版本、数据截止日或参数改变才重算。
+                                import hashlib
+                                strategy_version = '20260903-cap1682-vol2148'
+                                raw_key = f'{ci}|{strategy_version}|{len(df_k)}|{df_k.date.max()}|{ic}|{bsd}|{bed}'
+                                cache_key = 'backtest:' + hashlib.sha256(raw_key.encode()).hexdigest()
+                                try: result = None if apply_backtest else cloud_store().analysis(cache_key)
+                                except CloudError: result = None
+                                if not result:
+                                    result = cached_backtest_strategy(
+                                        df_k, initial_cash=ic, backtest_start=bsd, backtest_end=bed,
+                                        buy_threshold=buy_thresh, sell_threshold=sell_thresh,
+                                        signal4_lookback=sig4_lookback, signal4_threshold=sig4_threshold,
+                                        cooling_params=cooling_params
+                                    )
+                                    try:
+                                        cloud_store().put_analysis(cache_key, 'backtest', result, symbol=ci,
+                                            strategy_version=strategy_version, data_end_date=str(df_k.date.max().date()))
+                                    except CloudError: pass
 
                                 if result:
                                     st.caption(
