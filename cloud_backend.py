@@ -5,6 +5,7 @@ import hashlib
 import unicodedata
 import requests
 import json
+import math
 
 
 class CloudError(RuntimeError):
@@ -267,7 +268,22 @@ class CloudStore:
 
     def put_analysis(self, cache_key, category, payload, symbol=None, strategy_version=None, data_end_date=None):
         if not re.fullmatch(r'[A-Za-z0-9_.:-]{8,160}', cache_key): raise CloudError('缓存标识无效。')
-        try: clean = json.loads(json.dumps(payload, ensure_ascii=False, allow_nan=False, default=str))
+        def clean_value(value):
+            if value is None or isinstance(value, (str, bool, int)): return value
+            if isinstance(value, float): return value if math.isfinite(value) else None
+            if isinstance(value, dict): return {str(k): clean_value(v) for k, v in value.items()}
+            if isinstance(value, (list, tuple)): return [clean_value(v) for v in value]
+            # numpy scalars expose item(); pandas timestamps expose isoformat().
+            if hasattr(value, 'item'):
+                try: return clean_value(value.item())
+                except (ValueError, TypeError): pass
+            if hasattr(value, 'isoformat'):
+                try: return value.isoformat()
+                except (ValueError, TypeError): pass
+            raise TypeError(type(value).__name__)
+        try:
+            clean = clean_value(payload)
+            json.dumps(clean, ensure_ascii=False, allow_nan=False)
         except (TypeError, ValueError): raise CloudError('分析结果无法安全保存。') from None
         self._request('POST', 'biu_analysis_cache', params={'on_conflict': 'cache_key'}, body={
             'cache_key': cache_key, 'category': str(category)[:32], 'symbol': symbol,

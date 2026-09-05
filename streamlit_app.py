@@ -1658,10 +1658,14 @@ try:
                                 # Supabase跨重启缓存；策略版本、数据截止日或参数改变才重算。
                                 import hashlib
                                 strategy_version = '20260903-cap1682-vol2148'
-                                raw_key = f'{ci}|{strategy_version}|{len(df_k)}|{df_k.date.max()}|{ic}|{bsd}|{bed}'
+                                # cache-schema2 bypasses values written by the first release whose numpy
+                                # scalars could be stored as strings.
+                                raw_key = f'cache-schema2|{ci}|{strategy_version}|{len(df_k)}|{df_k.date.max()}|{ic}|{bsd}|{bed}'
                                 cache_key = 'backtest:' + hashlib.sha256(raw_key.encode()).hexdigest()
                                 try: result = None if apply_backtest else cloud_store().analysis(cache_key)
                                 except CloudError: result = None
+                                if result and not isinstance(result.get('总收益率%'), (int, float)):
+                                    result = None
                                 if not result:
                                     result = cached_backtest_strategy(
                                         df_k, initial_cash=ic, backtest_start=bsd, backtest_end=bed,
