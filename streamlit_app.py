@@ -38,7 +38,7 @@ for _biu_key, _biu_value in {
 
 st.set_page_config(page_title="Biu · 我的工作台", layout="wide")
 login_gate()  # 在所有行情请求、列表读取和通知操作之前验证登录。
-st.caption('云端版本：20260905-market-incremental1 · 分钟线/ETF/LOF/市场环境/定时汇总')
+st.caption('云端版本：20260905-market-circles2 · 增量缓存/按需市场/回测缓存')
 st.markdown('<style>\n:root {color-scheme:dark; --biu-bg:#070d21; --biu-panel:#111d3d; --biu-line:rgba(132,157,243,.24); --biu-text:#edf3ff; --biu-muted:#a5b3d3;}\n.stApp {background:radial-gradient(ellipse at 12% 0%,#142f63 0%,transparent 48%),radial-gradient(ellipse at 100% 40%,#29144d 0%,transparent 55%),var(--biu-bg);color:var(--biu-text);}\n[data-testid="stHeader"] {background:rgba(7,13,33,.92);}\n[data-testid="stMainBlockContainer"], .main .block-container {padding-top:2.5rem;padding-bottom:2rem;max-width:1740px;}\n[data-testid="stSidebar"] {background:linear-gradient(170deg,#142958 0%,#101c3b 42%,#17142f 100%);border-right:1px solid var(--biu-line);}\n[data-testid="stSidebarUserContent"] {padding:1.2rem 1rem 2rem;}\nh1,h2,h3,h4,h5,h6 {color:#f3f6ff!important;letter-spacing:.01em;}\nh1 {font-size:2rem!important;font-weight:750!important;}\nh2,h3 {font-size:1.1rem!important;}\n[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {color:var(--biu-muted)!important;line-height:1.65;}\n.biu-brand {font-size:30px;font-weight:800;letter-spacing:-1px;color:#57baff;margin-bottom:4px;}\n.biu-eyebrow {font-size:11px;letter-spacing:2px;color:#9cafdb;margin:0 0 12px;}\n.biu-nav {display:flex;gap:10px;flex-wrap:wrap;padding:4px 0 16px;}\n.biu-nav a {display:block;padding:9px 18px;border:1px solid var(--biu-line);background:#16284a;border-radius:10px;color:#d3e5ff!important;text-decoration:none!important;font-size:13px;}\n.biu-nav a:hover {background:#234477;border-color:#54b6ff;}\n.biu-nav a:focus-visible {outline:2px solid #79d6ff;outline-offset:3px;}\n.biu-anchor {scroll-margin-top:75px;}\n[data-testid="stForm"], [data-testid="stExpander"], .st-key-biu_kline_panel {border:1px solid var(--biu-line)!important;border-radius:16px!important;background:linear-gradient(115deg,rgba(24,53,100,.64),rgba(39,25,74,.65));box-shadow:0 10px 28px rgba(0,0,0,.1);}\n[data-testid="stForm"] {padding:18px!important;}\n[data-testid="stExpander"] details>summary {background:rgba(39,57,102,.25);border-radius:15px;padding:14px 16px;color:#edf3ff;}\n[data-testid="stExpander"] details>summary:hover {background:rgba(75,99,164,.24);}\n.st-key-biu_kline_panel {padding:16px!important;}\n[data-testid="stMetric"] {border:1px solid var(--biu-line);border-radius:14px;padding:18px 16px;min-height:122px;background:linear-gradient(125deg,rgba(30,81,148,.7),rgba(48,27,96,.75));}\n[data-testid="stMetricLabel"] {color:#b8c9ed;font-size:13px;}\n[data-testid="stMetricValue"] {color:#f1f6ff;font-size:clamp(20px,1.8vw,30px)!important;font-weight:650;font-variant-numeric:tabular-nums;}\n[data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] [data-testid="stMetric"]) {flex-wrap:wrap;gap:12px;}\n[data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] [data-testid="stMetric"]) > [data-testid="stColumn"] {flex:1 1 150px;min-width:150px;}\n[data-testid="stButton"] button, [data-testid="stFormSubmitButton"] button, [data-testid="stDownloadButton"] button {border:1px solid rgba(120,156,249,.4);background:#20385d;color:#e8f3ff;border-radius:10px;min-height:40px;transition:background .12s,border-color .12s;}\n[data-testid="stFormSubmitButton"] button {background:linear-gradient(100deg,#087bc3,#6d46d7);border-color:#628dff;font-weight:600;}\n[data-testid="stButton"] button:hover, [data-testid="stDownloadButton"] button:hover {background:#304c80;border-color:#77c7ff;color:white;}\nbutton:focus-visible {outline:2px solid #87dcff!important;outline-offset:2px;}\nbutton:disabled {opacity:.46;}\n[data-baseweb="input"], [data-baseweb="base-input"], [data-baseweb="select"]>div, [data-baseweb="textarea"] {background:#101b36!important;border-color:#44567b!important;color:#edf3ff!important;border-radius:9px;}\ninput,textarea {color:#edf3ff!important;caret-color:#65ccff;}\ninput::placeholder,textarea::placeholder {color:#879bc1!important;}\n[data-testid="stWidgetLabel"] p {color:#b9c8e7;}\n[data-testid="stDataFrame"] {border:1px solid var(--biu-line);border-radius:10px;overflow:hidden;}\n[data-testid="stAlert"] {border-radius:12px;border:1px solid var(--biu-line);}\n.stock-list-heading {color:#a8bee8!important;}\n.stock-list-cell {color:#e1ebff;}\n[class*="st-key-stock_row_"] {border-bottom:1px solid rgba(129,155,216,.08);}\n[class*="st-key-stock_row_"] button {background:rgba(43,66,111,.4);border-color:rgba(129,155,216,.28);}\n.js-plotly-plot .plotly .modebar {background:transparent!important;}\n.js-plotly-plot .plotly .modebar-btn path {fill:#9bb3de!important;}\nhr {border-color:var(--biu-line)!important;}\n@media(min-width:1100px) {[data-testid="stSidebar"] {min-width:410px!important;max-width:410px!important;}}\n@media(max-width:768px) {\n [data-testid="stMainBlockContainer"],.main .block-container {padding:3rem .8rem 1.5rem!important;}\n h1 {font-size:1.5rem!important;}\n [data-testid="stForm"],.st-key-biu_kline_panel {padding:12px!important;}\n [data-testid="stMetric"] {padding:14px 12px;min-height:105px;}\n [data-testid="stMetricValue"] {font-size:22px!important;}\n [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] [data-testid="stMetric"]) > [data-testid="stColumn"] {flex:1 1 calc(50% - 12px);min-width:130px;}\n [data-testid="stSidebar"] {min-width:0!important;max-width:96vw!important;}\n .biu-nav {gap:7px;}\n .biu-nav a {padding:8px 11px;font-size:12px;}\n .st-key-biu_kline_panel {padding:4px!important;}\n}\n@media(prefers-reduced-motion:reduce) {* {transition:none!important;}}\n</style>', unsafe_allow_html=True)
 st.markdown('''<style>
 .st-key-market_a_launch [data-testid="stPopoverButton"] button,.st-key-market_goods_launch [data-testid="stPopoverButton"] button {width:146px!important;height:146px!important;border-radius:50%!important;font-size:22px!important;font-weight:800!important;background:radial-gradient(circle at 35% 28%,#ff9e90,#ef3340 55%,#8f0e2a)!important;box-shadow:0 16px 38px rgba(239,51,64,.28)!important;}
@@ -46,7 +46,10 @@ st.markdown('''<style>
 .bubble-field {display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:14px;padding:12px 4px 20px;}
 .market-bubble {flex:none;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8px;border:1px solid rgba(255,255,255,.18);box-shadow:inset 0 0 24px rgba(255,255,255,.08),0 8px 20px rgba(0,0,0,.18);}
 .market-bubble b {font-size:13px}.market-bubble span {font-size:15px;font-weight:800}.market-bubble small {font-size:10px;opacity:.78}.market-bubble.up{background:radial-gradient(circle at 35% 25%,#ffaaa4,#bc2336)}.market-bubble.down{background:radial-gradient(circle at 35% 25%,#72d5b2,#14705a)}.market-bubble.flat{background:#33446b}
-@media(max-width:768px){.st-key-market_a_launch [data-testid="stPopoverButton"] button,.st-key-market_goods_launch [data-testid="stPopoverButton"] button{width:112px!important;height:112px!important;font-size:18px!important}.market-bubble{transform:scale(.9);margin:-5px}}
+.st-key-market_a_launch button,.st-key-market_goods_launch button{width:116px!important;height:116px!important;min-height:116px!important;border-radius:50%!important;padding:0!important;font-size:18px!important;font-weight:800!important;box-shadow:inset 0 0 28px rgba(255,255,255,.08),0 10px 24px rgba(0,0,0,.22)!important}
+.st-key-market_a_launch button{background:radial-gradient(circle at 35% 25%,#667bdc,#24346d)!important}
+.st-key-market_goods_launch button{background:radial-gradient(circle at 35% 25%,#d8a65b,#74472b)!important}
+@media(max-width:768px){.st-key-market_a_launch button,.st-key-market_goods_launch button{width:96px!important;height:96px!important;min-height:96px!important;font-size:16px!important}.market-bubble{transform:scale(.9);margin:-5px}}
 </style>''', unsafe_allow_html=True)
 st.sidebar.markdown('<div class="biu-brand">Biu</div><div class="biu-eyebrow">MY STOCK WORKSPACE</div>', unsafe_allow_html=True)
 
@@ -1480,20 +1483,39 @@ try:
     def _market_goods_snapshot():
         return fetch_commodity_quotes()
 
-    st.subheader('市场环境')
-    launch_a, launch_b, launch_space = st.columns([1, 1, 5])
-    with launch_a, st.container(key='market_a_launch'), st.popover('缅A', help='查看A股主要大盘指数'):
-        try:
-            rows = _market_index_snapshot()
-            if rows: st.markdown(bubble_html(rows, 'A股大盘'), unsafe_allow_html=True)
-            else: st.caption('大盘数据暂不可用，保留上次已保存数据。')
-        except Exception: st.caption('大盘接口暂不可用，不影响个股功能。')
-    with launch_b, st.container(key='market_goods_launch'), st.popover('大宗商品', help='查看黄金及主要商品'):
-        try:
-            rows = _market_goods_snapshot()
-            if rows: st.markdown(bubble_html(rows, '大宗商品'), unsafe_allow_html=True)
-            else: st.caption('商品数据暂不可用，保留上次已保存数据。')
-        except Exception: st.caption('商品接口暂不可用，不影响个股功能。')
+    @st.fragment
+    def render_market_environment():
+        """Market requests run only after a launch circle is clicked.
+
+        A popover body is still executed during every Streamlit rerun, even
+        while visually closed.  Buttons plus a fragment avoid those hidden
+        requests and keep this interaction from rebuilding the backtest page.
+        """
+        st.subheader('市场环境')
+        launch_a, launch_b, launch_space = st.columns([1, 1, 5])
+        with launch_a, st.container(key='market_a_launch'):
+            if st.button('缅A', key='open_market_a', use_container_width=False):
+                st.session_state['_market_panel'] = (
+                    None if st.session_state.get('_market_panel') == 'a' else 'a')
+        with launch_b, st.container(key='market_goods_launch'):
+            if st.button('大宗商品', key='open_market_goods', use_container_width=False):
+                st.session_state['_market_panel'] = (
+                    None if st.session_state.get('_market_panel') == 'goods' else 'goods')
+        selected = st.session_state.get('_market_panel')
+        if selected == 'a':
+            try:
+                rows = _market_index_snapshot()
+                if rows: st.markdown(bubble_html(rows, 'A股大盘'), unsafe_allow_html=True)
+                else: st.caption('大盘数据暂不可用。')
+            except Exception: st.caption('大盘接口暂不可用，不影响个股功能。')
+        elif selected == 'goods':
+            try:
+                rows = _market_goods_snapshot()
+                if rows: st.markdown(bubble_html(rows, '大宗商品'), unsafe_allow_html=True)
+                else: st.caption('商品数据暂不可用。')
+            except Exception: st.caption('商品接口暂不可用，不影响个股功能。')
+
+    render_market_environment()
 
     # ========== 主界面 ==========
     if st.session_state.get('target_code'):
@@ -1660,10 +1682,14 @@ try:
                                 strategy_version = '20260903-cap1682-vol2148'
                                 # cache-schema2 bypasses values written by the first release whose numpy
                                 # scalars could be stored as strings.
-                                raw_key = f'cache-schema2|{ci}|{strategy_version}|{len(df_k)}|{df_k.date.max()}|{ic}|{bsd}|{bed}'
+                                # cache-schema3 stores/restores the signal DataFrame as well as scalar totals.
+                                raw_key = f'cache-schema3|{ci}|{strategy_version}|{len(df_k)}|{df_k.date.max()}|{ic}|{bsd}|{bed}'
                                 cache_key = 'backtest:' + hashlib.sha256(raw_key.encode()).hexdigest()
-                                try: result = None if apply_backtest else cloud_store().analysis(cache_key)
-                                except CloudError: result = None
+                                memory = st.session_state.setdefault('_backtest_result_cache', {})
+                                result = None if apply_backtest else memory.get(cache_key)
+                                if result is None and not apply_backtest:
+                                    try: result = cloud_store().analysis(cache_key)
+                                    except CloudError: result = None
                                 if result and not isinstance(result.get('总收益率%'), (int, float)):
                                     result = None
                                 if not result:
@@ -1677,6 +1703,11 @@ try:
                                         cloud_store().put_analysis(cache_key, 'backtest', result, symbol=ci,
                                             strategy_version=strategy_version, data_end_date=str(df_k.date.max().date()))
                                     except CloudError: pass
+                                if result:
+                                    # Unrelated widget reruns reuse the in-session object immediately;
+                                    # no Supabase round trip and no repeated backtest calculation.
+                                    memory.clear()
+                                    memory[cache_key] = result
 
                                 if result:
                                     st.caption(

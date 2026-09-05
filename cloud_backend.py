@@ -264,13 +264,35 @@ class CloudStore:
     def analysis(self, cache_key, default=None):
         rows = self._request('GET', 'biu_analysis_cache', params={'cache_key': 'eq.' + cache_key,
             'select': 'payload', 'limit': 1})
-        return rows[0]['payload'] if rows else default
+        if not rows: return default
+        def restore(value):
+            if isinstance(value, list): return [restore(v) for v in value]
+            if isinstance(value, dict):
+                if value.get('__biu_type__') == 'dataframe':
+                    import pandas as pd
+                    frame = pd.DataFrame([restore(v) for v in value.get('records', [])],
+                                         columns=value.get('columns'))
+                    for column in value.get('datetime_columns', []):
+                        if column in frame: frame[column] = pd.to_datetime(frame[column], errors='coerce')
+                    return frame
+                return {k: restore(v) for k, v in value.items()}
+            return value
+        return restore(rows[0]['payload'])
 
     def put_analysis(self, cache_key, category, payload, symbol=None, strategy_version=None, data_end_date=None):
         if not re.fullmatch(r'[A-Za-z0-9_.:-]{8,160}', cache_key): raise CloudError('缓存标识无效。')
         def clean_value(value):
             if value is None or isinstance(value, (str, bool, int)): return value
             if isinstance(value, float): return value if math.isfinite(value) else None
+            # Backtest results contain a pandas DataFrame.  Preserve it with an
+            # explicit marker so a cloud restart can restore the cached result
+            # instead of silently recalculating the complete backtest.
+            if value.__class__.__name__ == 'DataFrame' and hasattr(value, 'to_dict'):
+                datetime_columns = [str(c) for c in value.columns
+                                    if str(getattr(value[c].dtype, 'kind', '')) == 'M']
+                return {'__biu_type__': 'dataframe', 'columns': [str(c) for c in value.columns],
+                        'datetime_columns': datetime_columns,
+                        'records': clean_value(value.to_dict(orient='records'))}
             if isinstance(value, dict): return {str(k): clean_value(v) for k, v in value.items()}
             if isinstance(value, (list, tuple)): return [clean_value(v) for v in value]
             # numpy scalars expose item(); pandas timestamps expose isoformat().
